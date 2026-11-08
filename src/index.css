@@ -1,0 +1,96 @@
+@import "tailwindcss";
+
+@theme {
+  --font-cinzel: 'Cinzel', serif;
+  --font-serif: 'Cormorant Garamond', Georgia, serif;
+  --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+  
+  body {
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    overscroll-behavior-y: none;
+  }
+}
+
+/* iOS Safari Dynamic Viewport & Smooth Scroll */
+.ios-scroll-container {
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+}
+
+/* 3D Envelope perspective */
+.perspective-1000 {
+  perspective: 1200px;
+  -webkit-perspective: 1200px;
+}
+.transform-style-3d {
+  transform-style: preserve-3d;
+  -webkit-transform-style: preserve-3d;
+}
+.backface-hidden {
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Gold shimmer animation */
+@keyframes goldShimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.gold-shimmer-text {
+  background: linear-gradient(135deg, #d4af37 0%, #fff2c4 40%, #c59b27 70%, #ffd700 100%);
+  background-size: 200% auto;
+  color: transparent;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: goldShimmer 4s linear infinite;
+}
+
+/* Crisp image rendering */
+.crisp-card-img {
+  image-rendering: -webkit-optimize-contrast;
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
+
+/* Wedding invitation: smooth full-card rise from the envelope */
+@keyframes weddingCardRise {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 38%, 0) scale(0.72);
+  }
+  45% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  @keyframes weddingCardRise {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+}

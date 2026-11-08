@@ -1,0 +1,6 @@
+{
+  "name": "Wasim & Ameen Wedding Invitation",
+  "description": "Mobile-friendly interactive royal burgundy wedding invitation for Wasim and Ameen with envelope opening, card viewer, and guest tools.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
