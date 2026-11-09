@@ -18,3 +18,9 @@ View your app in AI Studio: https://ai.studio/apps/318627b6-f1d3-485a-ae23-1ca3a
 2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
 3. Run the app:
    `npm run dev`
+
+## Music credit
+
+Background music: "Heartwarming" by Kevin MacLeod (incompetech.com)
+Licensed under Creative Commons: By Attribution 4.0 License
+http://creativecommons.org/licenses/by/4.0/

@@ -2,7 +2,6 @@
 // Designed to be lightweight, zero external file dependency, and fully functional on iPhone Safari
 
 let audioCtx: AudioContext | null = null;
-let ambientInterval: number | null = null;
 let isMusicPlaying = false;
 
 function getAudioContext(): AudioContext | null {
@@ -130,24 +129,109 @@ export function playSoftChime(freq = 523.25) {
 }
 
 /**
- * Ambient royal Santoor/Harp sequence (Raga Yaman celebration notes)
+ * Background music: "Heartwarming" by Kevin MacLeod (incompetech.com),
+ * a soft romantic piano piece with gentle strings.
+ * Licensed under Creative Commons: By Attribution 4.0 — http://creativecommons.org/licenses/by/4.0/
+ *
+ * The track is decoded with the Web Audio API and looped with a smooth
+ * crossfade so there is never a gap or sudden cut (works on iPhone Safari,
+ * where HTMLAudioElement.volume cannot be changed).
  */
-const celebrationMelody = [
-  { freq: 293.66, dur: 0.6 }, // D
-  { freq: 369.99, dur: 0.6 }, // F#
-  { freq: 440.00, dur: 0.7 }, // A
-  { freq: 554.37, dur: 0.6 }, // C#
-  { freq: 587.33, dur: 1.2 }, // D
-  { freq: 554.37, dur: 0.5 },
-  { freq: 440.00, dur: 0.7 },
-  { freq: 369.99, dur: 0.8 },
-  { freq: 329.63, dur: 0.6 }, // E
-  { freq: 293.66, dur: 1.5 }, // D
-];
 
-let melodyIndex = 0;
+const MUSIC_URL = '/audio/romantic-piano.mp3';
+const MUSIC_VOLUME = 0.25; // ~25%
+const FADE_IN_SECONDS = 3;
+const LOOP_CROSSFADE_SECONDS = 4;
+
+let musicData: Promise<ArrayBuffer> | null = null;
+let musicBuffer: AudioBuffer | null = null;
+let musicTrim = { start: 0, end: 0 };
+let masterGain: GainNode | null = null;
+let activeVoices: { src: AudioBufferSourceNode; gain: GainNode }[] = [];
+let nextLoopTimer: number | null = null;
+let playToken = 0;
+let userMusicEnabled = true;
+const musicListeners = new Set<(on: boolean) => void>();
+
+function notifyMusicListeners() {
+  const on = isMusicPlaying;
+  musicListeners.forEach((fn) => fn(on));
+}
+
+/** Start downloading the track early so playback begins quickly on tap */
+export function preloadBackgroundMusic() {
+  if (typeof window === 'undefined' || musicData) return;
+  musicData = fetch(MUSIC_URL)
+    .then((res) => {
+      if (!res.ok) throw new Error('Music download failed');
+      return res.arrayBuffer();
+    })
+    .catch((err) => {
+      musicData = null;
+      throw err;
+    });
+}
+
+function findAudibleRange(buffer: AudioBuffer) {
+  const threshold = 0.003;
+  const data = buffer.getChannelData(0);
+  let start = 0;
+  let end = data.length - 1;
+  while (start < end && Math.abs(data[start]) < threshold) start++;
+  while (end > start && Math.abs(data[end]) < threshold) end--;
+  return { start: start / buffer.sampleRate, end: end / buffer.sampleRate };
+}
+
+async function loadMusicBuffer(ctx: AudioContext): Promise<AudioBuffer> {
+  if (musicBuffer) return musicBuffer;
+  preloadBackgroundMusic();
+  const data = await musicData!;
+  // decodeAudioData detaches the buffer, so decode a copy
+  const decoded = await new Promise<AudioBuffer>((resolve, reject) => {
+    ctx.decodeAudioData(data.slice(0), resolve, reject);
+  });
+  musicBuffer = decoded;
+  musicTrim = findAudibleRange(decoded);
+  return decoded;
+}
+
+function playVoice(ctx: AudioContext, buffer: AudioBuffer, when: number, fadeIn: number, token: number) {
+  if (!masterGain || token !== playToken) return;
+  const { start, end } = musicTrim;
+  const duration = Math.max(end - start, 1);
+  const crossfade = Math.min(LOOP_CROSSFADE_SECONDS, duration / 4);
+
+  const src = ctx.createBufferSource();
+  src.buffer = buffer;
+  const gain = ctx.createGain();
+  gain.gain.setValueAtTime(0, when);
+  gain.gain.linearRampToValueAtTime(1, when + fadeIn);
+  gain.gain.setValueAtTime(1, when + duration - crossfade);
+  gain.gain.linearRampToValueAtTime(0, when + duration);
+  src.connect(gain);
+  gain.connect(masterGain);
+  src.start(when, start, duration);
+  src.stop(when + duration + 0.05);
+
+  const voice = { src, gain };
+  activeVoices.push(voice);
+  src.onended = () => {
+    activeVoices = activeVoices.filter((v) => v !== voice);
+    try { gain.disconnect(); } catch { /* noop */ }
+  };
+
+  // Queue the next pass (well ahead of time, so throttled background timers
+  // can't cause a gap) to start exactly as this one begins fading out
+  const nextStart = when + duration - crossfade;
+  const delayMs = Math.max((when - ctx.currentTime) * 1000, 0) + 500;
+  nextLoopTimer = window.setTimeout(() => {
+    if (token !== playToken || !isMusicPlaying) return;
+    playVoice(ctx, buffer, nextStart, crossfade, token);
+  }, delayMs);
+}
 
 export function startAmbientCelebrationMusic() {
+  if (!userMusicEnabled) return;
   const ctx = getAudioContext();
   if (!ctx) return;
   if (ctx.state === 'suspended') {
@@ -156,58 +240,70 @@ export function startAmbientCelebrationMusic() {
   if (isMusicPlaying) return;
 
   isMusicPlaying = true;
+  const token = ++playToken;
+  notifyMusicListeners();
 
-  const playNextNote = () => {
-    if (!isMusicPlaying || !audioCtx) return;
-    const item = celebrationMelody[melodyIndex % celebrationMelody.length];
-    melodyIndex++;
+  if (!masterGain) {
+    masterGain = ctx.createGain();
+    masterGain.connect(ctx.destination);
+  }
+  const now = ctx.currentTime;
+  masterGain.gain.cancelScheduledValues(now);
+  masterGain.gain.setValueAtTime(MUSIC_VOLUME, now);
 
-    const now = audioCtx.currentTime;
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
-
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(item.freq, now);
-
-    // Warm overtone for santur/sitar bell timber
-    const subOsc = audioCtx.createOscillator();
-    const subGain = audioCtx.createGain();
-    subOsc.type = 'triangle';
-    subOsc.frequency.setValueAtTime(item.freq * 2, now);
-
-    gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(0.05, now + 0.04);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + (item.dur + 0.5));
-
-    subGain.gain.setValueAtTime(0.0001, now);
-    subGain.gain.exponentialRampToValueAtTime(0.02, now + 0.04);
-    subGain.gain.exponentialRampToValueAtTime(0.0001, now + (item.dur + 0.3));
-
-    osc.connect(gain);
-    subOsc.connect(subGain);
-    gain.connect(audioCtx.destination);
-    subGain.connect(audioCtx.destination);
-
-    osc.start(now);
-    subOsc.start(now);
-    osc.stop(now + item.dur + 0.6);
-    subOsc.stop(now + item.dur + 0.4);
-
-    const nextDelay = item.dur * 1000 + 150;
-    ambientInterval = window.setTimeout(playNextNote, nextDelay);
-  };
-
-  playNextNote();
+  loadMusicBuffer(ctx)
+    .then((buffer) => {
+      if (token !== playToken || !isMusicPlaying) return;
+      playVoice(ctx, buffer, ctx.currentTime + 0.05, FADE_IN_SECONDS, token);
+    })
+    .catch(() => {
+      if (token !== playToken) return;
+      isMusicPlaying = false;
+      notifyMusicListeners();
+    });
 }
 
 export function stopAmbientCelebrationMusic() {
+  if (!isMusicPlaying) return;
   isMusicPlaying = false;
-  if (ambientInterval) {
-    clearTimeout(ambientInterval);
-    ambientInterval = null;
+  playToken++;
+  if (nextLoopTimer) {
+    clearTimeout(nextLoopTimer);
+    nextLoopTimer = null;
   }
+  if (audioCtx && masterGain) {
+    const ctx = audioCtx;
+    const now = ctx.currentTime;
+    const fadeOut = 0.8;
+    masterGain.gain.cancelScheduledValues(now);
+    masterGain.gain.setValueAtTime(masterGain.gain.value, now);
+    masterGain.gain.linearRampToValueAtTime(0, now + fadeOut);
+    activeVoices.forEach(({ src }) => {
+      try { src.stop(now + fadeOut + 0.05); } catch { /* noop */ }
+    });
+  }
+  notifyMusicListeners();
 }
 
 export function isCelebrationMusicActive(): boolean {
   return isMusicPlaying;
+}
+
+/** Toggle background music on/off from the guest-facing control */
+export function toggleBackgroundMusic(): boolean {
+  if (isMusicPlaying) {
+    userMusicEnabled = false;
+    stopAmbientCelebrationMusic();
+  } else {
+    userMusicEnabled = true;
+    startAmbientCelebrationMusic();
+  }
+  return isMusicPlaying;
+}
+
+export function subscribeToMusicState(listener: (on: boolean) => void): () => void {
+  musicListeners.add(listener);
+  return () => {
+    musicListeners.delete(listener);
+  };
 }

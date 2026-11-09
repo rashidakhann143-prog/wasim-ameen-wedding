@@ -13,8 +13,9 @@ import GuestbookModal from './components/GuestbookModal';
 import GuestLinkGeneratorModal from './components/GuestLinkGeneratorModal';
 import BottomToolbar from './components/BottomToolbar';
 import RosePetalsCanvas from './components/RosePetalsCanvas';
+import MusicToggle from './components/MusicToggle';
 import { WeddingCard } from './types';
-import { startAmbientCelebrationMusic, resumeAudioContextIfNeeded } from './utils/audio';
+import { startAmbientCelebrationMusic, resumeAudioContextIfNeeded, preloadBackgroundMusic } from './utils/audio';
 import { parseGuestScale } from './utils/guestFont';
 import { OWNER_EXPERIENCE_SETTINGS } from './config/experienceSettings';
 
@@ -115,6 +116,9 @@ export default function App() {
   // Global mobile gesture unlock to guarantee background music permission on iPhone Safari
   useEffect(() => {
     if (!OWNER_EXPERIENCE_SETTINGS.ENABLE_BACKGROUND_MUSIC) return;
+
+    // Download the romantic piano track early so it starts promptly on envelope tap
+    preloadBackgroundMusic();
 
     const unlockAudio = () => {
       resumeAudioContextIfNeeded();
@@ -322,6 +326,9 @@ export default function App() {
       {isGuestbookOpen && (
         <GuestbookModal onClose={() => setIsGuestbookOpen(false)} />
       )}
+
+      {/* Background music on/off control */}
+      {OWNER_EXPERIENCE_SETTINGS.ENABLE_BACKGROUND_MUSIC && <MusicToggle raised={isEnvelopeOpen} />}
 
       {/* Toast Notification */}
       {toastMessage && (
